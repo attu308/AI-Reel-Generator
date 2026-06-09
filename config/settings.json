@@ -1,0 +1,10 @@
+{
+    "input_folder": "../input",
+    "output_folder": "../output",
+    "transcripts_folder": "../transcripts",
+    "plans_folder": "../plans",
+    "assets_folder": "../assets",
+    "models_folder": "../models",
+    "logs_folder": "../logs",
+    "whisper_model": "base"
+}
