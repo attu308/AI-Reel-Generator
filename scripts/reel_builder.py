@@ -4,7 +4,8 @@ from moviepy import (
     VideoFileClip,
     TextClip,
     CompositeVideoClip,
-    concatenate_videoclips
+    concatenate_videoclips,
+    ColorClip
 )
 
 def load_settings():
@@ -342,16 +343,112 @@ def create_clips(
     
     return clips
 
+def create_intro_card(
+    reel_plan
+):
+    """
+    Professional intro card.
+    """
+
+    background = (
+        ColorClip(
+            size=(1080, 1920),
+            color=(15, 15, 15)
+        )
+        .with_duration(2)
+    )
+
+    brand = TextClip(
+        text="MINDBODYBEYOND",
+        font_size=45,
+        color="white"
+    )
+
+    brand = (
+        brand
+        .with_duration(2)
+        .with_position(
+            ("center", 250)
+        )
+    )
+
+    hook = TextClip(
+        text=reel_plan[
+            "hook_title"
+        ],
+        font_size=80,
+        color="white",
+        stroke_color="black",
+        stroke_width=3,
+        size=(900, 600),
+        method="caption",
+        text_align="center"
+    )
+
+    hook = (
+        hook
+        .with_duration(2)
+        .with_position(
+            "center"
+        )
+    )
+
+    title = TextClip(
+        text=reel_plan[
+            "reel_title"
+        ],
+        font_size=45,
+        color="yellow",
+        size=(900, 150),
+        method="caption",
+        text_align="center"
+    )
+
+    title = (
+        title
+        .with_duration(2)
+        .with_position(
+            ("center", 1400)
+        )
+    )
+
+    intro = CompositeVideoClip(
+        [
+            background,
+            brand,
+            hook,
+            title
+        ],
+        size=(1080, 1920)
+    )
+
+    return intro
+
 def build_reel(
-    clips
+    clips,
+    reel_plan
 ):
     """
     Combine clips into reel.
     """
 
+    intro = (
+        create_intro_card(
+            reel_plan
+        )
+    )
+
+    all_clips = [
+        intro
+    ]
+
+    all_clips.extend(
+        clips
+    )
+
     reel = (
         concatenate_videoclips(
-            clips,
+            all_clips,
             method="compose"
         )
     )
@@ -529,20 +626,50 @@ def split_text_into_chunks(
 def create_subtitle_clip(
     text,
     duration,
+    video_width,
     video_height
 ):
 
-    subtitle_y = int(
-        video_height * 0.82
+    is_vertical = (
+        video_height
+        >
+        video_width
     )
+
+    if is_vertical:
+
+        subtitle_y = int(
+            video_height * 0.82
+        )
+
+        subtitle_width = int(
+            video_width * 0.8
+        )
+
+        font_size = 40
+
+    else:
+
+        subtitle_y = int(
+            video_height * 0.85
+        )
+
+        subtitle_width = int(
+            video_width * 0.7
+        )
+
+        font_size = 55
 
     subtitle = TextClip(
         text=text,
-        font_size=40,
+        font_size=font_size,
         color="white",
         stroke_color="black",
         stroke_width=3,
-        size=(450, 200),
+        size=(
+            subtitle_width,
+            200
+        ),
         method="caption",
         text_align="center"
     )
@@ -671,6 +798,7 @@ def add_subtitles_to_clip(
                 create_subtitle_clip(
                     chunk,
                     chunk_duration,
+                    clip.w,
                     clip.h
                 )
             )
@@ -730,7 +858,7 @@ if __name__ == "__main__":
 
     reel = (
         build_reel(
-            clips
+            clips, reel_plan
         )
     )
 

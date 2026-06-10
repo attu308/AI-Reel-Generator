@@ -80,3 +80,6 @@ Thumbs.db
 dist/
 build/
 *.egg-info/
+
+!demo/
+!demo/demo_reel.mp4
