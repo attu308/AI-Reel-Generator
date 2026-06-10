@@ -244,19 +244,39 @@ def create_clips(
             f"{video_path.name}"
         )
 
-        clip = (
-            VideoFileClip(
-                str(
-                    video_path
-                )
+        video = VideoFileClip(
+            str(
+                video_path
             )
+        )
+
+        if (
+            segment["end"]
+            >
+            video.duration
+        ):
+
+            print(
+                f"Clamping segment "
+                f"{segment['id']} "
+                f"from "
+                f"{segment['end']} "
+                f"to "
+                f"{video.duration}"
+            )
+
+        safe_end = min(
+            segment["end"],
+            video.duration - 0.05
+        )
+
+        clip = (
+            video
             .subclipped(
                 segment[
                     "start"
                 ],
-                segment[
-                    "end"
-                ]
+                safe_end
             )
         )
 
@@ -319,7 +339,7 @@ def create_clips(
         clips.append(
             clip
         )
-
+    
     return clips
 
 def build_reel(
