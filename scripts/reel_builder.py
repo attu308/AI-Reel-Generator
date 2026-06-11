@@ -205,6 +205,110 @@ def add_highlights_to_clip(
         overlays
     )
 
+def format_for_reel(
+    clip
+):
+    """
+    Convert any clip into
+    1080x1920 reel format.
+    """
+
+    REEL_WIDTH = 1080
+    REEL_HEIGHT = 1920
+
+    is_vertical = (
+        clip.h >
+        clip.w
+    )
+
+    if is_vertical:
+
+        clip = clip.resized(
+            height=REEL_HEIGHT
+        )
+
+        if clip.w > REEL_WIDTH:
+
+            x1 = (
+                clip.w
+                -
+                REEL_WIDTH
+            ) / 2
+
+            clip = clip.cropped(
+                x1=x1,
+                x2=x1 + REEL_WIDTH
+            )
+
+        elif clip.w < REEL_WIDTH:
+
+            background = ColorClip(
+                size=(
+                    REEL_WIDTH,
+                    REEL_HEIGHT
+                ),
+                color=(
+                    0,
+                    0,
+                    0
+                )
+            ).with_duration(
+                clip.duration
+            )
+
+            clip = CompositeVideoClip(
+                [
+                    background,
+                    clip.with_position(
+                        "center"
+                    )
+                ],
+                size=(
+                    REEL_WIDTH,
+                    REEL_HEIGHT
+                )
+            )
+
+    else:
+
+        background = (
+            clip
+            .resized(
+                height=REEL_HEIGHT
+            )
+            .with_opacity(
+                0.25
+            )
+        )
+
+        foreground = (
+            clip
+            .resized(
+                width=REEL_WIDTH
+            )
+            .with_position(
+                "center"
+            )
+        )
+
+        clip = CompositeVideoClip(
+            [
+                background,
+                foreground
+            ],
+            size=(
+                REEL_WIDTH,
+                REEL_HEIGHT
+            )
+        )
+
+    print(
+        f"Reel clip size: "
+        f"{clip.w} x {clip.h}"
+    )
+
+    return clip
+
 def create_clips(
     selected_segments,
     reel_plan,
@@ -280,6 +384,8 @@ def create_clips(
                 safe_end
             )
         )
+
+        clip = format_for_reel(clip)
 
         transcript_data = (
             load_transcript(
