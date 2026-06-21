@@ -49,26 +49,42 @@ def load_model(settings):
 
     return model
 
-def transcribe_video(model, video_path):
+def transcribe_video(
+    model,
+    video_path
+):
     """
-    Transcribe a single video file.
+    Transcribe a single video file
+    with word timestamps.
     """
 
     segments, info = model.transcribe(
         str(video_path),
-        beam_size=5
+        beam_size=5,
+        word_timestamps=True
     )
 
     return segments, info
 
-def save_transcript(video_path, segments, info, settings):
+def save_transcript(
+    video_path,
+    segments,
+    info,
+    settings
+):
     """
-    Save transcript data to a JSON file.
+    Save transcript data to a JSON file
+    including word timestamps.
     """
 
     transcripts_folder = (
         Path(__file__).parent.parent /
-        settings["transcripts_folder"].replace("../", "")
+        settings[
+            "transcripts_folder"
+        ].replace(
+            "../",
+            ""
+        )
     )
 
     transcript_data = {
@@ -79,11 +95,41 @@ def save_transcript(video_path, segments, info, settings):
     }
 
     for segment in segments:
-        transcript_data["segments"].append(
+
+        words = []
+
+        if segment.words:
+
+            for word in segment.words:
+
+                words.append(
+                    {
+                        "word": word.word.strip(),
+                        "start": round(
+                            word.start,
+                            2
+                        ),
+                        "end": round(
+                            word.end,
+                            2
+                        )
+                    }
+                )
+
+        transcript_data[
+            "segments"
+        ].append(
             {
-                "start": round(segment.start, 2),
-                "end": round(segment.end, 2),
-                "text": segment.text.strip()
+                "start": round(
+                    segment.start,
+                    2
+                ),
+                "end": round(
+                    segment.end,
+                    2
+                ),
+                "text": segment.text.strip(),
+                "words": words
             }
         )
 
@@ -92,7 +138,12 @@ def save_transcript(video_path, segments, info, settings):
         f"{video_path.stem}_transcript.json"
     )
 
-    with open(output_file, "w", encoding="utf-8") as file:
+    with open(
+        output_file,
+        "w",
+        encoding="utf-8"
+    ) as file:
+
         json.dump(
             transcript_data,
             file,

@@ -2,10 +2,15 @@ import json
 from pathlib import Path
 from moviepy import (
     VideoFileClip,
+    AudioFileClip,
+    CompositeAudioClip,
+    concatenate_audioclips,
     TextClip,
     CompositeVideoClip,
     concatenate_videoclips,
-    ColorClip
+    ColorClip,
+    vfx,
+    ImageClip
 )
 
 def load_settings():
@@ -27,6 +32,9 @@ def load_settings():
         )
 
 def load_content_library():
+    """
+    Load content library.
+    """
 
     library_file = (
         Path(__file__).parent.parent
@@ -43,9 +51,11 @@ def load_content_library():
         return json.load(
             file
         )
-
-
+    
 def load_reel_plan():
+    """
+    Load Gemini reel plan.
+    """
 
     plan_file = (
         Path(__file__).parent.parent
@@ -63,6 +73,168 @@ def load_reel_plan():
             file
         )
 
+def load_background_music(
+    reel_plan,
+    settings
+):
+    """
+    Load music selected by Gemini.
+    """
+
+    if not settings.get(
+        "music_enabled",
+        False
+    ):
+        return None
+
+    music_file = (
+        Path(__file__).parent.parent
+        / "assets"
+        / "music"
+        / f"{reel_plan['music_style']}.mp3"
+    )
+
+    if not music_file.exists():
+
+        print(
+            f"Music file not found: "
+            f"{music_file}"
+        )
+
+        return None
+
+    print(
+        f"Using music: "
+        f"{music_file.name}"
+    )
+
+    return AudioFileClip(
+        str(music_file)
+    )
+
+def get_visual_style(
+    reel_plan
+):
+    return reel_plan.get(
+        "visual_style",
+        {}
+    )
+
+def get_audio_style(
+    reel_plan
+):
+    return reel_plan.get(
+        "audio_style",
+        {}
+    )
+
+def apply_background_music(
+    reel,
+    reel_plan,
+    settings
+):
+    """
+    Mix background music with
+    reel audio.
+    """
+
+    music = (
+        load_background_music(
+            reel_plan,
+            settings
+        )
+    )
+
+    if music is None:
+        return reel
+
+    intensity = (
+        reel_plan
+        .get(
+            "audio_style",
+            {}
+        )
+        .get(
+            "music_intensity",
+            "medium"
+        )
+    )
+
+    volume_map = {
+        "low": 0.08,
+        "medium": 0.15,
+        "high": 0.25
+    }
+
+    music_volume = (
+        volume_map.get(
+            intensity,
+            0.15
+        )
+    )
+
+    print(
+        f"Music intensity: "
+        f"{intensity}"
+    )
+
+    music = (
+        music
+        .with_volume_scaled(
+            music_volume
+        )
+    )
+
+    while (
+        music.duration
+        <
+        reel.duration
+    ):
+
+        music = concatenate_audioclips(
+            [music, music]
+        )
+
+    music = music.subclipped(
+        0,
+        reel.duration
+    )
+
+    if reel.audio:
+
+        final_audio = (
+            CompositeAudioClip(
+                [
+                    reel.audio,
+                    music
+                ]
+            )
+        )
+
+    else:
+
+        final_audio = music
+
+    return reel.with_audio(
+        final_audio
+    )
+
+def get_intro_image_path(
+    reel_plan
+):
+    """
+    Get intro image selected
+    by Gemini.
+    """
+
+    return (
+        Path(__file__).parent.parent
+        / "assets"
+        / "intro"
+        / reel_plan[
+            "intro_image"
+        ]
+    )
 
 def get_selected_segments(
     content_library,
@@ -321,6 +493,18 @@ def create_clips(
 
     clips = []
 
+    visual_energy = (
+        reel_plan
+        .get(
+            "visual_style",
+            {}
+        )
+        .get(
+            "visual_energy",
+            5
+        )
+    )
+
     input_folder = (
         Path(__file__).parent.parent
         /
@@ -355,23 +539,34 @@ def create_clips(
             )
         )
 
-        if (
+        original_duration = (
             segment["end"]
-            >
-            video.duration
-        ):
+            -
+            segment["start"]
+        )
 
-            print(
-                f"Clamping segment "
-                f"{segment['id']} "
-                f"from "
-                f"{segment['end']} "
-                f"to "
-                f"{video.duration}"
-            )
+        if visual_energy <= 3:
+
+            keep_ratio = 1.0
+
+        elif visual_energy <= 6:
+
+            keep_ratio = 0.9
+
+        else:
+
+            keep_ratio = 0.75
+
+        target_duration = (
+            original_duration
+            *
+            keep_ratio
+        )
 
         safe_end = min(
-            segment["end"],
+            segment["start"]
+            +
+            target_duration,
             video.duration - 0.05
         )
 
@@ -385,7 +580,9 @@ def create_clips(
             )
         )
 
-        clip = format_for_reel(clip)
+        clip = format_for_reel(
+            clip
+        )
 
         transcript_data = (
             load_transcript(
@@ -402,9 +599,7 @@ def create_clips(
                 segment[
                     "start"
                 ],
-                segment[
-                    "end"
-                ]
+                safe_end
             )
         )
 
@@ -414,7 +609,8 @@ def create_clips(
                 subtitle_segments,
                 segment[
                     "start"
-                ]
+                ],
+                reel_plan
             )
         )
 
@@ -446,35 +642,68 @@ def create_clips(
         clips.append(
             clip
         )
-    
+
     return clips
 
 def create_intro_card(
     reel_plan
 ):
     """
-    Professional intro card.
+    Professional branded intro.
     """
 
-    background = (
-        ColorClip(
-            size=(1080, 1920),
-            color=(15, 15, 15)
+    duration = 2.5
+
+    background_path = (
+        get_intro_image_path(
+            reel_plan
         )
-        .with_duration(2)
+    )
+
+    background = (
+        ImageClip(
+            str(background_path)
+        )
+        .resized(
+            height=1920
+        )
+        .with_duration(
+            duration
+        )
+    )
+
+    background = CompositeVideoClip(
+        [
+            background.with_opacity(
+                0.45
+            ),
+            ColorClip(
+                size=(1080, 1920),
+                color=(0, 0, 0)
+            )
+            .with_duration(
+                duration
+            )
+            .with_opacity(
+                0.55
+            )
+        ],
+        size=(1080, 1920)
     )
 
     brand = TextClip(
         text="MINDBODYBEYOND",
-        font_size=45,
-        color="white"
+        font_size=42,
+        color="#D0D0D0"
     )
 
     brand = (
         brand
-        .with_duration(2)
+        .with_duration(
+            duration
+        )
         .with_position(
-            ("center", 250)
+            ("center", 220)
         )
     )
 
@@ -482,18 +711,20 @@ def create_intro_card(
         text=reel_plan[
             "hook_title"
         ],
-        font_size=80,
+        font_size=115,
         color="white",
         stroke_color="black",
-        stroke_width=3,
-        size=(900, 600),
+        stroke_width=4,
+        size=(900, 700),
         method="caption",
         text_align="center"
     )
 
     hook = (
         hook
-        .with_duration(2)
+        .with_duration(
+            duration
+        )
         .with_position(
             "center"
         )
@@ -503,18 +734,33 @@ def create_intro_card(
         text=reel_plan[
             "reel_title"
         ],
-        font_size=45,
-        color="yellow",
-        size=(900, 150),
+        font_size=50,
+        color="#FFD700",
+        size=(900, 200),
         method="caption",
         text_align="center"
     )
 
     title = (
         title
-        .with_duration(2)
+        .with_duration(
+            duration
+        )
         .with_position(
-            ("center", 1400)
+            ("center", 1340)
+        )
+    )
+
+    divider = (
+        ColorClip(
+            size=(500, 5),
+            color=(255, 215, 0)
+        )
+        .with_duration(
+            duration
+        )
+        .with_position(
+            ("center", 1280)
         )
     )
 
@@ -523,10 +769,45 @@ def create_intro_card(
             background,
             brand,
             hook,
+            divider,
             title
         ],
         size=(1080, 1920)
     )
+
+    hook_animation = (
+        reel_plan
+        .get(
+            "visual_style",
+            {}
+        )
+        .get(
+            "hook_animation",
+            "fade"
+        )
+    )
+
+    if (
+        hook_animation
+        ==
+        "zoom"
+    ):
+
+        intro = (
+            intro
+            .resized(
+                lambda t:
+                1 + (
+                    0.08
+                    *
+                    (
+                        t
+                        /
+                        duration
+                    )
+                )
+            )
+        )
 
     return intro
 
@@ -552,10 +833,109 @@ def build_reel(
         clips
     )
 
+    visual_energy = (
+        reel_plan
+        .get(
+            "visual_style",
+            {}
+        )
+        .get(
+            "visual_energy",
+            5
+        )
+    )
+
+    transition_style = (
+        reel_plan
+        .get(
+            "visual_style",
+            {}
+        )
+        .get(
+            "transition_style",
+            "crossfade"
+        )
+    )
+
+    if visual_energy <= 3:
+
+        transition_duration = 0.60
+
+    elif visual_energy <= 6:
+
+        transition_duration = 0.35
+
+    else:
+
+        transition_duration = 0.15
+
+    print(
+        f"Visual Energy: "
+        f"{visual_energy}"
+    )
+
+    print(
+        f"Transition Duration: "
+        f"{transition_duration}"
+    )
+
+    processed_clips = []
+
+    for i, clip in enumerate(
+        all_clips
+    ):
+
+        if i > 0:
+
+            if (
+                transition_style
+                ==
+                "crossfade"
+            ):
+
+                clip = (
+                    clip
+                    .with_start(
+                        processed_clips[-1].end
+                        -
+                        transition_duration
+                    )
+                    .with_effects(
+                        [
+                            vfx.CrossFadeIn(
+                                transition_duration
+                            )
+                        ]
+                    )
+                )
+
+            else:
+
+                clip = (
+                    clip
+                    .with_start(
+                        processed_clips[-1].end
+                    )
+                )
+
+        processed_clips.append(
+            clip
+        )
+
+    reel = CompositeVideoClip(
+        processed_clips,
+        size=(1080, 1920)
+    )
+
+    settings = (
+        load_settings()
+    )
+
     reel = (
-        concatenate_videoclips(
-            all_clips,
-            method="compose"
+        apply_background_music(
+            reel,
+            reel_plan,
+            settings
         )
     )
 
@@ -701,16 +1081,14 @@ def add_hook_to_first_clip(
         ]
     )
 
-def split_text_into_chunks(
-    text,
+def split_words_into_chunks(
+    words,
     words_per_chunk=4
 ):
     """
-    Split subtitle text into
-    smaller chunks.
+    Split word timestamp data
+    into chunks.
     """
-
-    words = text.split()
 
     chunks = []
 
@@ -719,62 +1097,82 @@ def split_text_into_chunks(
         len(words),
         words_per_chunk
     ):
-        chunk = " ".join(
+
+        chunk_words = (
             words[
                 i:i + words_per_chunk
             ]
         )
 
-        chunks.append(chunk)
+        chunks.append(
+            chunk_words
+        )
 
     return chunks
 
-def create_subtitle_clip(
-    text,
+def create_highlighted_subtitle_clip(
+    full_text,
+    highlighted_word,
     duration,
     video_width,
-    video_height
+    video_height,
+    caption_position="lower_third"
 ):
+    """
+    Subtitle with one word
+    highlighted.
+    """
 
     is_vertical = (
-        video_height
-        >
+        video_height >
         video_width
     )
 
     if is_vertical:
 
-        subtitle_y = int(
-            video_height * 0.82
-        )
-
         subtitle_width = int(
             video_width * 0.8
         )
 
-        font_size = 40
+        font_size = 50
 
     else:
-
-        subtitle_y = int(
-            video_height * 0.85
-        )
 
         subtitle_width = int(
             video_width * 0.7
         )
 
-        font_size = 55
+        font_size = 60
+
+    if caption_position == "center":
+
+        subtitle_y = int(
+            video_height * 0.55
+        )
+
+    else:
+
+        subtitle_y = int(
+            video_height * 0.82
+        )
+
+    highlighted_text = (
+        full_text.replace(
+            highlighted_word,
+            f"[{highlighted_word}]",
+            1
+        )
+    )
 
     subtitle = TextClip(
-        text=text,
+        text=highlighted_text,
         font_size=font_size,
         color="white",
         stroke_color="black",
         stroke_width=3,
         size=(
             subtitle_width,
-            200
+            250
         ),
         method="caption",
         text_align="center"
@@ -862,72 +1260,135 @@ def get_subtitle_segments(
 def add_subtitles_to_clip(
     clip,
     subtitle_segments,
-    clip_start_time
+    clip_start_time,
+    reel_plan
 ):
     """
-    Add chunked subtitles.
+    Add word-level subtitles.
+    Visual energy controls pacing.
     """
 
     overlays = [clip]
 
-    for segment in (
-        subtitle_segments
-    ):
-
-        chunks = (
-            split_text_into_chunks(
-                segment["text"],
-                words_per_chunk=4
-            )
+    visual_energy = (
+        reel_plan
+        .get(
+            "visual_style",
+            {}
         )
+        .get(
+            "visual_energy",
+            5
+        )
+    )
 
-        if not chunks:
+    if visual_energy <= 3:
+
+        words_per_chunk = 5
+
+    elif visual_energy <= 6:
+
+        words_per_chunk = 4
+
+    else:
+
+        words_per_chunk = 2
+
+    print(
+        f"Visual Energy: "
+        f"{visual_energy}"
+    )
+
+    print(
+        f"Words Per Chunk: "
+        f"{words_per_chunk}"
+    )
+
+    for segment in subtitle_segments:
+
+        if not segment.get(
+            "words"
+        ):
             continue
 
-        segment_duration = (
-            segment["end"]
-            -
-            segment["start"]
+        chunks = (
+            split_words_into_chunks(
+                segment["words"],
+                words_per_chunk
+            )
         )
 
-        chunk_duration = (
-            segment_duration
-            /
-            len(chunks)
-        )
+        for chunk in chunks:
 
-        for i, chunk in enumerate(
-            chunks
-        ):
-
-            subtitle = (
-                create_subtitle_clip(
-                    chunk,
-                    chunk_duration,
-                    clip.w,
-                    clip.h
-                )
+            chunk_text = " ".join(
+                [
+                    word["word"]
+                    for word in chunk
+                ]
             )
 
-            subtitle = (
-                subtitle.with_start(
-                    (
-                        segment["start"]
+            chunk_start = (
+                chunk[0]["start"]
+            )
+
+            chunk_end = (
+                chunk[-1]["end"]
+            )
+
+            chunk_duration = (
+                chunk_end
+                -
+                chunk_start
+            )
+
+            for word in chunk:
+
+                word_start = (
+                    word["start"]
+                )
+
+                word_duration = (
+                    max(
+                        0.08,
+                        word["end"]
                         -
-                        clip_start_time
-                    )
-                    +
-                    (
-                        i
-                        *
-                        chunk_duration
+                        word["start"]
                     )
                 )
-            )
 
-            overlays.append(
-                subtitle
-            )
+                subtitle = (
+                    create_highlighted_subtitle_clip(
+                        chunk_text,
+                        word["word"],
+                        word_duration,
+                        clip.w,
+                        clip.h,
+                        reel_plan
+                        .get(
+                            "visual_style",
+                            {}
+                        )
+                        .get(
+                            "caption_position",
+                            "lower_third"
+                        )
+                    )
+                )
+
+                subtitle = (
+                    subtitle
+                    .with_start(
+                        (
+                            word_start
+                            -
+                            clip_start_time
+                        )
+                    )
+                )
+
+                overlays.append(
+                    subtitle
+                )
 
     return CompositeVideoClip(
         overlays

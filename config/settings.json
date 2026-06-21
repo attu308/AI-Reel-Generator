@@ -6,5 +6,9 @@
     "assets_folder": "../assets",
     "models_folder": "../models",
     "logs_folder": "../logs",
-    "whisper_model": "base"
+    "whisper_model": "base",
+
+    "music_enabled": true,
+    "music_style": "motivation",
+    "music_volume": 0.12
 }
